@@ -13,6 +13,7 @@ import {
 import { Fragment, useState, type ReactElement } from "react";
 import { getProgressIcon } from "@raycast/utils";
 import { useAccounts, type AccountState } from "./use-accounts";
+import { getGlanceWindow } from "./account-display";
 import { formatResetTimeRemaining, parseResetExpiry } from "./reset-expiry";
 import { getBranding } from "./providers/branding";
 import { switchCodexAccount } from "./providers/codex";
@@ -23,9 +24,18 @@ export default function Command() {
   // Controlled from the first render onwards, so nothing re-selects a row as
   // the accounts stream in one by one.
   const [selectedId, setSelectedId] = useState<string | undefined>(initialSelectedId);
+  const currentCodexId = states.find(
+    (state) =>
+      state.config.provider === "codex" && (state.account === null ? state.config.isCurrent : state.account.isCurrent),
+  )?.config.id;
 
   const refreshAction = (
-    <Action title="Refresh" icon={Icon.ArrowClockwise} onAction={refresh} shortcut={{ modifiers: ["cmd"], key: "r" }} />
+    <Action
+      title="Refresh"
+      icon={Icon.ArrowClockwise}
+      onAction={() => refresh(currentCodexId)}
+      shortcut={{ modifiers: ["cmd"], key: "r" }}
+    />
   );
 
   return (
@@ -53,7 +63,7 @@ export default function Command() {
           key={state.config.id}
           state={state}
           refreshAction={refreshAction}
-          onRefresh={refresh}
+          onRefresh={() => refresh(state.config.id)}
           onRename={rename}
         />
       ))}
@@ -177,7 +187,7 @@ function RenameForm({ state, onRename }: { state: AccountState; onRename: Rename
 
 /**
  * The list is narrow in detail mode, so the accessory carries only the single
- * most-constrained window - enough to triage without opening each account.
+ * preferred glance window - enough to triage without opening each account.
  */
 function getAccessories(
   account: Account | null,
@@ -200,14 +210,14 @@ function getAccessories(
     ];
   }
 
-  const tightest = getTightestWindow(account.windows);
+  const glanceWindow = getGlanceWindow(account.provider, account.windows);
   const accessories: List.Item.Accessory[] = [];
 
-  if (tightest) {
-    const remaining = getRemaining(tightest);
+  if (glanceWindow) {
+    const remaining = getRemaining(glanceWindow);
     accessories.push({
       icon: getProgressIcon(remaining / 100, getRemainingColor(remaining)),
-      tooltip: `${tightest.label}: ${formatPercent(remaining)}% left`,
+      tooltip: `${glanceWindow.label}: ${formatPercent(remaining)}% left`,
     });
   }
 
@@ -425,13 +435,6 @@ function buildResetRows(credits: ResetCredit[], availableCount: number | null): 
       </List.Item.Detail.Metadata.TagList>
     )),
   ];
-}
-
-function getTightestWindow(windows: UsageWindow[]): UsageWindow | null {
-  return windows.reduce<UsageWindow | null>(
-    (tightest, window) => (tightest === null || getRemaining(window) < getRemaining(tightest) ? window : tightest),
-    null,
-  );
 }
 
 function getRemaining(window: UsageWindow): number {

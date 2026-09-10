@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAccountNames } from "./account-names";
 import { getConfiguredAccounts, type ConfiguredAccount } from "./usage";
 import type { Account, AccountFailure, ProviderId } from "./providers/types";
+import { prioritizeAccount } from "./account-refresh";
 
 const cache = new Cache();
 const CACHE_KEY = "accounts";
@@ -48,12 +49,16 @@ export function useAccounts() {
   const [initial] = useState(() => {
     const entries = readCache(configs);
 
-    return { entries, selectedId: getMostRecentlyUsed(entries) ?? configs[0]?.id };
+    return {
+      entries,
+      selectedId: getMostRecentlyUsed(entries) ?? configs[0]?.id,
+      currentCodexId: configs.find((config) => config.provider === "codex" && config.isCurrent)?.id,
+    };
   });
   const [entries, setEntries] = useState<Map<string, CacheEntry>>(initial.entries);
   const [refreshErrors, setRefreshErrors] = useState<Map<string, AccountFailure>>(new Map());
   const [pending, setPending] = useState<Set<string>>(() => new Set(configs.map((config) => config.id)));
-  const [refreshGeneration, setRefreshGeneration] = useState(0);
+  const [refreshRequest, setRefreshRequest] = useState({ generation: 0, priorityId: initial.currentCodexId });
   const latestRun = useRef(0);
 
   useEffect(() => {
@@ -61,16 +66,20 @@ export function useAccounts() {
     // Only the first pass honours the cache; every later pass is a deliberate
     // refresh, and `initial.entries` is what the cache held when we mounted.
     const due =
-      refreshGeneration === 0 ? configs.filter((config) => !isFresh(initial.entries.get(config.id), config)) : configs;
+      refreshRequest.generation === 0
+        ? configs.filter((config) => !isFresh(initial.entries.get(config.id), config))
+        : configs;
 
     setPending(new Set(due.map((config) => config.id)));
 
     // Providers run side by side, but accounts within one provider go in turn:
     // ChatGPT's backend answers `{"error":"Too many concurrent requests"}` when
     // several arrive together, and each Codex check also costs a CLI spawn.
-    for (const group of groupByProvider(due).values()) {
+    for (const [provider, group] of groupByProvider(due)) {
+      const ordered = provider === "codex" ? prioritizeAccount(group, refreshRequest.priorityId) : group;
+
       void (async () => {
-        for (const config of group) {
+        for (const config of ordered) {
           const account = await config.fetch().catch((error: unknown) => failedAccount(config, error));
 
           if (latestRun.current !== run) {
@@ -117,7 +126,7 @@ export function useAccounts() {
         }
       })();
     }
-  }, [configs, refreshGeneration, initial.entries]);
+  }, [configs, refreshRequest, initial.entries]);
 
   useEffect(() => {
     if (pending.size === 0 && entries.size > 0) {
@@ -147,7 +156,11 @@ export function useAccounts() {
     isLoading: pending.size > 0,
     /** The account used most recently as of the last launch; stable for this session. */
     initialSelectedId: initial.selectedId,
-    refresh: useCallback(() => setRefreshGeneration((value) => value + 1), []),
+    /** Refetches everything, asking the active Codex account first. */
+    refresh: useCallback(
+      (priorityId?: string) => setRefreshRequest((request) => ({ generation: request.generation + 1, priorityId })),
+      [],
+    ),
     /** Stores a display name for an account; an empty name restores the configured one. */
     rename,
   };
