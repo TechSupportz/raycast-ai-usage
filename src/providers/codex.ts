@@ -4,7 +4,13 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { buildCliPath } from "./cli";
-import { applyCodexAuthRegistry, parseCodexAuthJson, parseCodexAuthTable } from "./codex-auth-table";
+import {
+  applyCodexAuthRegistry,
+  parseCodexAuthError,
+  parseCodexAuthJson,
+  parseCodexAuthSwitchJson,
+  parseCodexAuthTable,
+} from "./codex-auth-table";
 import { fetchCodexResetCredits } from "./codex-reset-credits";
 import { isRecord } from "./types";
 import type { Account } from "./types";
@@ -48,21 +54,25 @@ export async function fetchCodexAccount(id: string): Promise<Account> {
 export async function switchCodexAccount(query: string, expectedId: string): Promise<void> {
   const command = resolveCodexAuthCommand();
   const wasRunning = await isChatGptRunning();
+  const expectedKey = expectedId.startsWith("codex-auth:") ? expectedId.slice("codex-auth:".length) : null;
+  let switchedKey: string | null;
 
   try {
-    await execFileAsync(command.file, [...command.prefix, "switch", query], {
+    const { stdout } = await execFileAsync(command.file, [...command.prefix, "switch", query, "--json"], {
+      encoding: "utf8",
       timeout: 30_000,
       env: command.env,
     });
+    switchedKey = parseCodexAuthSwitchJson(stdout);
+
+    if (switchedKey === null) {
+      throw new Error("codex-auth returned an invalid switch response.");
+    }
   } catch (error) {
     throw new Error(commandErrorMessage(error));
   }
 
-  const expectedKey = expectedId.startsWith("codex-auth:") ? expectedId.slice("codex-auth:".length) : null;
-  const registry = readRegistry();
-  const activeKey = isRecord(registry) ? registry.active_account_key : null;
-
-  if (expectedKey && activeKey !== expectedKey) {
+  if (expectedKey && switchedKey !== expectedKey) {
     throw new Error("codex-auth did not activate the selected account.");
   }
 
@@ -99,8 +109,9 @@ function commandErrorMessage(error: unknown): string {
   const stderr = typeof error.stderr === "string" ? error.stderr.trim() : "";
   const stdout = typeof error.stdout === "string" ? error.stdout.trim() : "";
   const message = error instanceof Error ? error.message : "codex-auth could not switch accounts.";
+  const structured = parseCodexAuthError(stdout);
 
-  return stderr || stdout || message;
+  return structured?.message || stderr || stdout || message;
 }
 
 function emptyAccount(id: string): Account {

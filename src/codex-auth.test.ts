@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyCodexAuthRegistry, parseCodexAuthJson, parseCodexAuthTable } from "./providers/codex-auth-table.ts";
+import {
+  applyCodexAuthRegistry,
+  parseCodexAuthError,
+  parseCodexAuthJson,
+  parseCodexAuthSwitchJson,
+  parseCodexAuthTable,
+} from "./providers/codex-auth-table.ts";
 
 test("parses codex-auth v0.3 JSON without depending on its table columns", () => {
   const accounts = parseCodexAuthJson(
@@ -70,6 +76,42 @@ test("parses codex-auth v0.3 JSON without depending on its table columns", () =>
 
 test("does not mistake legacy table output for JSON", () => {
   assert.equal(parseCodexAuthJson("ACCOUNT PLAN 5H USAGE WEEKLY USAGE"), null);
+});
+
+test("parses the account key from a codex-auth v0.3 switch response", () => {
+  assert.equal(
+    parseCodexAuthSwitchJson(
+      JSON.stringify({
+        schema_version: 1,
+        command: "switch",
+        switched_to: { account_key: "account-2", email: "personal@example.com" },
+      }),
+    ),
+    "account-2",
+  );
+});
+
+test("rejects malformed and wrong-command switch responses", () => {
+  assert.equal(parseCodexAuthSwitchJson("not json"), null);
+  assert.equal(
+    parseCodexAuthSwitchJson(
+      JSON.stringify({ schema_version: 1, command: "list", switched_to: { account_key: "account-2" } }),
+    ),
+    null,
+  );
+});
+
+test("parses structured codex-auth v0.3 errors", () => {
+  assert.deepEqual(
+    parseCodexAuthError(
+      JSON.stringify({
+        schema_version: 1,
+        error: { code: "ambiguous_query", message: "more than one account matches" },
+      }),
+    ),
+    { code: "ambiguous_query", message: "more than one account matches" },
+  );
+  assert.equal(parseCodexAuthError('{"schema_version":1,"error":{"code":"future_error"}}'), null);
 });
 
 test("parses every codex-auth account and converts remaining to used percent", () => {

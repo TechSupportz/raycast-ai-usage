@@ -1,5 +1,10 @@
 import type { Account, UsageWindow } from "./types";
 
+export type CodexAuthError = {
+  code: string;
+  message: string;
+};
+
 /** Parses codex-auth v0.3's versioned list JSON. Returns null for non-JSON/legacy output. */
 export function parseCodexAuthJson(raw: string): Account[] | null {
   let value: unknown;
@@ -41,6 +46,30 @@ export function parseCodexAuthJson(raw: string): Account[] | null {
       },
     ];
   });
+}
+
+/** Parses codex-auth v0.3's versioned switch response. */
+export function parseCodexAuthSwitchJson(raw: string): string | null {
+  const value = parseJsonRecord(raw);
+
+  if (value?.schema_version !== 1 || value.command !== "switch" || !isRecord(value.switched_to)) {
+    return null;
+  }
+
+  return typeof value.switched_to.account_key === "string" ? value.switched_to.account_key : null;
+}
+
+/** Extracts a stable message from any schema-v1 codex-auth error document. */
+export function parseCodexAuthError(raw: string): CodexAuthError | null {
+  const value = parseJsonRecord(raw);
+
+  if (value?.schema_version !== 1 || !isRecord(value.error)) {
+    return null;
+  }
+
+  return typeof value.error.code === "string" && typeof value.error.message === "string"
+    ? { code: value.error.code, message: value.error.message }
+    : null;
 }
 
 /** Parses codex-auth v0.2's fixed-column table. Unknown columns are ignored. */
@@ -169,6 +198,15 @@ function formatDuration(minutes: number): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseJsonRecord(raw: string): Record<string, unknown> | null {
+  try {
+    const value: unknown = JSON.parse(raw);
+    return isRecord(value) ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 type RegistryAccount = {
