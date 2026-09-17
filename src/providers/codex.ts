@@ -4,7 +4,13 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { buildCliPath } from "./cli";
-import { applyCodexAuthRegistry, parseCodexAuthTable } from "./codex-auth-table";
+import {
+  applyCodexAuthRegistry,
+  parseCodexAuthError,
+  parseCodexAuthJson,
+  parseCodexAuthSwitchJson,
+  parseCodexAuthTable,
+} from "./codex-auth-table";
 import { fetchCodexResetCredits } from "./codex-reset-credits";
 import { isRecord } from "./types";
 import type { Account } from "./types";
@@ -20,13 +26,7 @@ let cached: { at: number; accounts: Promise<Account[]> } | null = null;
 export function getCodexAccounts(): Account[] {
   try {
     const command = resolveCodexAuthCommand();
-    const output = execFileSync(command.file, [...command.prefix, "list", "--skip-api"], {
-      encoding: "utf8",
-      timeout: 5_000,
-      env: command.env,
-    });
-
-    return parseAccounts(output);
+    return listCodexAccountsSync(command);
   } catch (error) {
     return [unavailableAccount(error)];
   }
@@ -54,21 +54,25 @@ export async function fetchCodexAccount(id: string): Promise<Account> {
 export async function switchCodexAccount(query: string, expectedId: string): Promise<void> {
   const command = resolveCodexAuthCommand();
   const wasRunning = await isChatGptRunning();
+  const expectedKey = expectedId.startsWith("codex-auth:") ? expectedId.slice("codex-auth:".length) : null;
+  let switchedKey: string | null;
 
   try {
-    await execFileAsync(command.file, [...command.prefix, "switch", query], {
+    const { stdout } = await execFileAsync(command.file, [...command.prefix, "switch", query, "--json"], {
+      encoding: "utf8",
       timeout: 30_000,
       env: command.env,
     });
+    switchedKey = parseCodexAuthSwitchJson(stdout);
+
+    if (switchedKey === null) {
+      throw new Error("codex-auth returned an invalid switch response.");
+    }
   } catch (error) {
     throw new Error(commandErrorMessage(error));
   }
 
-  const expectedKey = expectedId.startsWith("codex-auth:") ? expectedId.slice("codex-auth:".length) : null;
-  const registry = readRegistry();
-  const activeKey = isRecord(registry) ? registry.active_account_key : null;
-
-  if (expectedKey && activeKey !== expectedKey) {
+  if (expectedKey && switchedKey !== expectedKey) {
     throw new Error("codex-auth did not activate the selected account.");
   }
 
@@ -105,8 +109,9 @@ function commandErrorMessage(error: unknown): string {
   const stderr = typeof error.stderr === "string" ? error.stderr.trim() : "";
   const stdout = typeof error.stdout === "string" ? error.stdout.trim() : "";
   const message = error instanceof Error ? error.message : "codex-auth could not switch accounts.";
+  const structured = parseCodexAuthError(stdout);
 
-  return stderr || stdout || message;
+  return structured?.message || stderr || stdout || message;
 }
 
 function emptyAccount(id: string): Account {
@@ -128,11 +133,7 @@ function listCodexAccounts(): Promise<Account[]> {
   }
 
   const command = resolveCodexAuthCommand();
-  const accounts = execFileAsync(command.file, [...command.prefix, "list"], {
-    encoding: "utf8",
-    timeout: 30_000,
-    env: command.env,
-  }).then(async ({ stdout }) => addResetCredits(parseAccounts(stdout)));
+  const accounts = listCodexAccountsAsync(command).then(addResetCredits);
 
   cached = { at: Date.now(), accounts };
   return accounts;
@@ -140,6 +141,54 @@ function listCodexAccounts(): Promise<Account[]> {
 
 function parseAccounts(output: string): Account[] {
   return applyCodexAuthRegistry(parseCodexAuthTable(output), readRegistry());
+}
+
+function listCodexAccountsSync(command: CodexAuthCommand): Account[] {
+  try {
+    const output = execFileSync(command.file, [...command.prefix, "list", "--skip-api", "--json"], {
+      encoding: "utf8",
+      timeout: 5_000,
+      env: command.env,
+    });
+    const accounts = parseCodexAuthJson(output);
+
+    if (accounts !== null) {
+      return accounts;
+    }
+  } catch {
+    // codex-auth v0.2 has no JSON output; retry with its table interface below.
+  }
+
+  const output = execFileSync(command.file, [...command.prefix, "list", "--skip-api"], {
+    encoding: "utf8",
+    timeout: 5_000,
+    env: command.env,
+  });
+  return parseAccounts(output);
+}
+
+async function listCodexAccountsAsync(command: CodexAuthCommand): Promise<Account[]> {
+  try {
+    const { stdout } = await execFileAsync(command.file, [...command.prefix, "list", "--json"], {
+      encoding: "utf8",
+      timeout: 30_000,
+      env: command.env,
+    });
+    const accounts = parseCodexAuthJson(stdout);
+
+    if (accounts !== null) {
+      return accounts;
+    }
+  } catch {
+    // codex-auth v0.2 has no JSON output; retry with its table interface below.
+  }
+
+  const { stdout } = await execFileAsync(command.file, [...command.prefix, "list"], {
+    encoding: "utf8",
+    timeout: 30_000,
+    env: command.env,
+  });
+  return parseAccounts(stdout);
 }
 
 function readRegistry(): unknown {

@@ -1,5 +1,77 @@
 import type { Account, UsageWindow } from "./types";
 
+export type CodexAuthError = {
+  code: string;
+  message: string;
+};
+
+/** Parses codex-auth v0.3's versioned list JSON. Returns null for non-JSON/legacy output. */
+export function parseCodexAuthJson(raw: string): Account[] | null {
+  let value: unknown;
+
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+
+  if (!isRecord(value) || value.schema_version !== 1 || value.command !== "list" || !Array.isArray(value.accounts)) {
+    return null;
+  }
+
+  const activeKey = typeof value.active_account_key === "string" ? value.active_account_key : null;
+
+  return value.accounts.flatMap((candidate) => {
+    if (!isRecord(candidate) || typeof candidate.account_key !== "string" || typeof candidate.email !== "string") {
+      return [];
+    }
+
+    const usage = isRecord(candidate.usage) ? candidate.usage : {};
+    const windows = [toRegistryWindow(usage.primary), toRegistryWindow(usage.secondary)].filter(
+      (window): window is UsageWindow => window !== null,
+    );
+
+    return [
+      {
+        id: `codex-auth:${candidate.account_key}`,
+        provider: "codex" as const,
+        label: candidate.email,
+        plan: typeof candidate.plan === "string" ? candidate.plan : null,
+        email: candidate.email,
+        windows,
+        resets: null,
+        failure: null,
+        isCurrent: candidate.active === true || candidate.account_key === activeKey,
+        switchQuery: candidate.account_key,
+      },
+    ];
+  });
+}
+
+/** Parses codex-auth v0.3's versioned switch response. */
+export function parseCodexAuthSwitchJson(raw: string): string | null {
+  const value = parseJsonRecord(raw);
+
+  if (value?.schema_version !== 1 || value.command !== "switch" || !isRecord(value.switched_to)) {
+    return null;
+  }
+
+  return typeof value.switched_to.account_key === "string" ? value.switched_to.account_key : null;
+}
+
+/** Extracts a stable message from any schema-v1 codex-auth error document. */
+export function parseCodexAuthError(raw: string): CodexAuthError | null {
+  const value = parseJsonRecord(raw);
+
+  if (value?.schema_version !== 1 || !isRecord(value.error)) {
+    return null;
+  }
+
+  return typeof value.error.code === "string" && typeof value.error.message === "string"
+    ? { code: value.error.code, message: value.error.message }
+    : null;
+}
+
 /** Parses codex-auth v0.2's fixed-column table. Unknown columns are ignored. */
 export function parseCodexAuthTable(raw: string): Account[] {
   const lines = raw.split(/\r?\n/);
@@ -126,6 +198,15 @@ function formatDuration(minutes: number): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseJsonRecord(raw: string): Record<string, unknown> | null {
+  try {
+    const value: unknown = JSON.parse(raw);
+    return isRecord(value) ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 type RegistryAccount = {
