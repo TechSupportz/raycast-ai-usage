@@ -1,5 +1,48 @@
 import type { Account, UsageWindow } from "./types";
 
+/** Parses codex-auth v0.3's versioned list JSON. Returns null for non-JSON/legacy output. */
+export function parseCodexAuthJson(raw: string): Account[] | null {
+  let value: unknown;
+
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+
+  if (!isRecord(value) || value.schema_version !== 1 || value.command !== "list" || !Array.isArray(value.accounts)) {
+    return null;
+  }
+
+  const activeKey = typeof value.active_account_key === "string" ? value.active_account_key : null;
+
+  return value.accounts.flatMap((candidate) => {
+    if (!isRecord(candidate) || typeof candidate.account_key !== "string" || typeof candidate.email !== "string") {
+      return [];
+    }
+
+    const usage = isRecord(candidate.usage) ? candidate.usage : {};
+    const windows = [toRegistryWindow(usage.primary), toRegistryWindow(usage.secondary)].filter(
+      (window): window is UsageWindow => window !== null,
+    );
+
+    return [
+      {
+        id: `codex-auth:${candidate.account_key}`,
+        provider: "codex" as const,
+        label: candidate.email,
+        plan: typeof candidate.plan === "string" ? candidate.plan : null,
+        email: candidate.email,
+        windows,
+        resets: null,
+        failure: null,
+        isCurrent: candidate.active === true || candidate.account_key === activeKey,
+        switchQuery: candidate.account_key,
+      },
+    ];
+  });
+}
+
 /** Parses codex-auth v0.2's fixed-column table. Unknown columns are ignored. */
 export function parseCodexAuthTable(raw: string): Account[] {
   const lines = raw.split(/\r?\n/);

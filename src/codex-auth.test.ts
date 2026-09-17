@@ -1,6 +1,76 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyCodexAuthRegistry, parseCodexAuthTable } from "./providers/codex-auth-table.ts";
+import { applyCodexAuthRegistry, parseCodexAuthJson, parseCodexAuthTable } from "./providers/codex-auth-table.ts";
+
+test("parses codex-auth v0.3 JSON without depending on its table columns", () => {
+  const accounts = parseCodexAuthJson(
+    JSON.stringify({
+      schema_version: 1,
+      command: "list",
+      active_account_key: "account-2",
+      accounts: [
+        {
+          number: 1,
+          account_key: "account-1",
+          email: "student@example.edu",
+          plan: "plus",
+          active: false,
+          usage: {
+            primary: { used_percent: 12.5, window_minutes: 300, resets_at: 1785814639 },
+            secondary: null,
+          },
+        },
+        {
+          number: 2,
+          account_key: "account-2",
+          email: "personal@example.com",
+          plan: "business",
+          active: true,
+          usage: {
+            primary: { used_percent: 20, window_minutes: 300, resets_at: 1785814639 },
+            secondary: { used_percent: 40, window_minutes: 10080, resets_at: 1786419439 },
+          },
+        },
+      ],
+    }),
+  );
+
+  assert.deepEqual(
+    accounts?.map(({ id, email, plan, windows, isCurrent, switchQuery }) => ({
+      id,
+      email,
+      plan,
+      windows: windows.map(({ label, usedPercent }) => ({ label, usedPercent })),
+      isCurrent,
+      switchQuery,
+    })),
+    [
+      {
+        id: "codex-auth:account-1",
+        email: "student@example.edu",
+        plan: "plus",
+        windows: [{ label: "5h Limit", usedPercent: 12.5 }],
+        isCurrent: false,
+        switchQuery: "account-1",
+      },
+      {
+        id: "codex-auth:account-2",
+        email: "personal@example.com",
+        plan: "business",
+        windows: [
+          { label: "5h Limit", usedPercent: 20 },
+          { label: "Weekly Limit", usedPercent: 40 },
+        ],
+        isCurrent: true,
+        switchQuery: "account-2",
+      },
+    ],
+  );
+});
+
+test("does not mistake legacy table output for JSON", () => {
+  assert.equal(parseCodexAuthJson("ACCOUNT PLAN 5H USAGE WEEKLY USAGE"), null);
+});
 
 test("parses every codex-auth account and converts remaining to used percent", () => {
   const output = `     ACCOUNT                 PLAN     5H USAGE              WEEKLY USAGE           LAST ACTIVITY
