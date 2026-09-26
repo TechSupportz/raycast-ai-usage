@@ -17,6 +17,13 @@ test("parses Claude's named usage windows", () => {
         utilization: 12,
         resets_at: 1_774_915_200,
       },
+      iguana_necktie: {
+        utilization: 0,
+        resets_at: "2026-09-25T12:00:00Z",
+      },
+      nimbus_quill: {
+        utilization: 0,
+      },
       extra_usage: {
         is_enabled: true,
       },
@@ -33,12 +40,6 @@ test("parses Claude's named usage windows", () => {
         label: "Weekly Limit",
         usedPercent: 41.2,
         resetsAt: Date.parse("2026-07-28T00:00:00Z"),
-      },
-      {
-        id: "seven_day_opus",
-        label: "Opus Weekly Limit",
-        usedPercent: 12,
-        resetsAt: 1_774_915_200_000,
       },
     ],
   );

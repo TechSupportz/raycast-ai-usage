@@ -7,7 +7,7 @@ export type UsageWindow = {
   resetsAt: number | null;
 };
 
-/** One of the banked rate-limit resets Codex grants. */
+/** One available banked usage reset. */
 export type ResetCredit = {
   id: string;
   status: string;
@@ -42,7 +42,7 @@ export type Account = {
   plan: string | null;
   email: string | null;
   windows: UsageWindow[];
-  /** Codex only; null when the provider has no concept of banked resets. */
+  /** Null when banked reset data is not available from the provider. */
   resets: ResetCreditsResponse | null;
   failure: AccountFailure | null;
   /** Present for providers that can identify the credential currently in use. */

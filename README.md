@@ -4,12 +4,12 @@ Raycast extension for checking your Codex and Claude Code usage limits from the 
 
 ## What it shows
 
-For each account, one section listing whichever rate-limit windows the provider reports:
+For each account, one section listing its main rate-limit windows:
 
 - **Codex** — the 5-hour and weekly limits, plus banked usage resets
-- **Claude Code** — the session and weekly limits
+- **Claude Code** — the session and weekly limits, plus available saved usage resets
 
-Every window shows how much you have left, coloured by how close you are to the limit. Exact reset times appear when `codex-auth` provides machine-readable timestamps.
+Every window shows how much you have left, coloured by how close you are to the limit. Its reset time appears when the provider reports a machine-readable timestamp.
 
 ## Multiple Codex accounts
 

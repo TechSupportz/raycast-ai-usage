@@ -5,6 +5,13 @@ export type ParsedUsageWindow = {
   resetsAt: number | null;
 };
 
+const MAIN_LIMIT_LABELS = new Map([
+  ["five_hour", "Session Limit"],
+  ["seven_day", "Weekly Limit"],
+  ["session", "Session Limit"],
+  ["weekly_all", "Weekly Limit"],
+]);
+
 /**
  * Claude's OAuth endpoint exposes named top-level windows such as `five_hour`
  * and `seven_day`. The legacy array fallback keeps the parser tolerant of the
@@ -16,14 +23,16 @@ export function parseClaudeUsagePayload(payload: unknown): ParsedUsageWindow[] {
   }
 
   const windows = Object.entries(payload).flatMap(([kind, value]) => {
-    if (!isRecord(value) || typeof value.utilization !== "number") {
+    const label = MAIN_LIMIT_LABELS.get(kind);
+
+    if (!label || !isRecord(value) || typeof value.utilization !== "number") {
       return [];
     }
 
     return [
       {
         id: kind,
-        label: formatLimitLabel(kind),
+        label,
         usedPercent: value.utilization,
         resetsAt: parseResetAt(value.resets_at),
       },
@@ -36,14 +45,20 @@ export function parseClaudeUsagePayload(payload: unknown): ParsedUsageWindow[] {
 
   const legacyWindows = Array.isArray(payload.limits) ? payload.limits.filter(isRecord) : [];
   const parsedLegacyWindows = legacyWindows.flatMap((limit) => {
-    if (typeof limit.percent !== "number" || typeof limit.kind !== "string") {
+    const kind = limit.kind;
+    if (typeof kind !== "string" || typeof limit.percent !== "number") {
+      return [];
+    }
+
+    const label = MAIN_LIMIT_LABELS.get(kind);
+    if (!label) {
       return [];
     }
 
     return [
       {
-        id: limit.kind,
-        label: formatLimitLabel(limit.kind),
+        id: kind,
+        label,
         usedPercent: limit.percent,
         resetsAt: parseResetAt(limit.resets_at),
       },
@@ -55,32 +70,6 @@ export function parseClaudeUsagePayload(payload: unknown): ParsedUsageWindow[] {
   }
 
   return parsedLegacyWindows;
-}
-
-function formatLimitLabel(kind: string): string {
-  if (kind === "session" || kind === "five_hour") {
-    return "Session Limit";
-  }
-
-  if (kind === "weekly_all" || kind === "seven_day") {
-    return "Weekly Limit";
-  }
-
-  if (kind.startsWith("seven_day_")) {
-    return `${formatWords(kind.slice("seven_day_".length))} Weekly Limit`;
-  }
-
-  const label = formatWords(kind);
-
-  return label.endsWith("Limit") ? label : `${label} Limit`;
-}
-
-function formatWords(value: string): string {
-  return value
-    .split("_")
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
 }
 
 function parseResetAt(value: unknown): number | null {

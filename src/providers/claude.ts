@@ -4,14 +4,16 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { mergeClaudeOAuthCredentials, shouldRefresh, type ClaudeOAuthRefresh } from "./claude-refresh";
+import { parseClaudeResetCredits } from "./claude-reset-credits";
 import { parseClaudeUsagePayload } from "./claude-usage";
-import { isRecord, type Account, type UsageWindow } from "./types";
+import { isRecord, type Account, type ResetCreditsResponse, type UsageWindow } from "./types";
 
 const execFileAsync = promisify(execFile);
 
 export const CLAUDE_ACCOUNT_ID = "claude";
 
 const USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
+const USAGE_WITH_RESETS_URL = `${USAGE_URL}?cedar_ember=1&skip_spend=1`;
 const OAUTH_TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
 const OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 const HTTP_TIMEOUT_MS = 10000;
@@ -98,7 +100,7 @@ export async function fetchClaudeAccount(): Promise<Account> {
       throw new ClaudeAuthExpiredError();
     }
 
-    return { ...base, windows: await fetchWindows(credentials) };
+    return { ...base, ...(await fetchUsage(credentials)) };
   } catch (error) {
     if (error instanceof ClaudeAuthExpiredError) {
       return { ...base, failure: { kind: "expired", message: error.message } };
@@ -450,10 +452,17 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function fetchWindows(credentials: Credentials): Promise<UsageWindow[]> {
-  let response = await requestUsage(credentials.accessToken);
+type ClaudeUsageClient = { url: string; userAgent: string; includesResets: boolean };
 
-  if (response.status === 401 && credentials.refreshToken) {
+const STANDARD_USAGE_CLIENT: ClaudeUsageClient = { url: USAGE_URL, userAgent: USER_AGENT, includesResets: false };
+
+async function fetchUsage(
+  credentials: Credentials,
+): Promise<{ windows: UsageWindow[]; resets: ResetCreditsResponse | null }> {
+  let token = credentials.accessToken;
+  let usage = await requestUsageWithFallback(token, await resolveUsageClient());
+
+  if (usage.response.status === 401 && credentials.refreshToken) {
     let refreshed: Credentials | null;
 
     try {
@@ -467,27 +476,81 @@ async function fetchWindows(credentials: Credentials): Promise<UsageWindow[]> {
     }
 
     if (refreshed) {
-      response = await requestUsage(refreshed.accessToken);
+      token = refreshed.accessToken;
+      usage = await requestUsageWithFallback(token, usage.client);
     }
   }
 
-  if (response.status === 401) {
+  if (usage.response.status === 401) {
     throw new ClaudeAuthExpiredError();
   }
 
-  if (!response.ok) {
-    throw new Error(`Claude usage returned HTTP ${response.status}.`);
+  if (!usage.response.ok) {
+    throw new Error(`Claude usage returned HTTP ${usage.response.status}.`);
   }
 
-  const payload = await response.json();
-  return parseClaudeUsagePayload(payload);
+  const payload = await usage.response.json();
+  return {
+    windows: parseClaudeUsagePayload(payload),
+    resets: usage.client.includesResets ? parseClaudeResetCredits(payload) : null,
+  };
 }
 
-async function requestUsage(token: string): Promise<Response> {
-  return fetch(USAGE_URL, {
+async function requestUsageWithFallback(
+  token: string,
+  client: ClaudeUsageClient,
+): Promise<{ client: ClaudeUsageClient; response: Response }> {
+  if (client.includesResets) {
+    try {
+      const response = await requestUsage(token, client);
+      if (response.ok || response.status === 401) {
+        return { client, response };
+      }
+    } catch {
+      // Reset discovery is optional; the ordinary usage request remains authoritative.
+    }
+  }
+
+  return { client: STANDARD_USAGE_CLIENT, response: await requestUsage(token, STANDARD_USAGE_CLIENT) };
+}
+
+async function resolveUsageClient(): Promise<ClaudeUsageClient> {
+  const searchPath = [
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    join(homedir(), ".local/bin"),
+    join(homedir(), ".claude/local"),
+    join(homedir(), ".bun/bin"),
+    process.env.PATH ?? "",
+  ].join(":");
+
+  try {
+    const { stdout } = await execFileAsync("claude", ["--version"], {
+      encoding: "utf8",
+      timeout: 3000,
+      env: { ...process.env, PATH: searchPath },
+    });
+    const version = stdout.match(/\b\d+\.\d+\.\d+\b/)?.[0];
+
+    if (version) {
+      return {
+        url: USAGE_WITH_RESETS_URL,
+        userAgent: `claude-cli/${version} (external, cli) ${USER_AGENT}`,
+        includesResets: true,
+      };
+    }
+  } catch {
+    // Usage windows remain available when Claude Code's executable cannot be found.
+  }
+
+  return STANDARD_USAGE_CLIENT;
+}
+
+async function requestUsage(token: string, client: ClaudeUsageClient): Promise<Response> {
+  return fetch(client.url, {
     headers: {
       Authorization: `Bearer ${token}`,
-      "User-Agent": USER_AGENT,
+      "User-Agent": client.userAgent,
       Accept: "application/json",
       "anthropic-beta": "oauth-2025-04-20",
     },
