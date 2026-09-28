@@ -1,9 +1,8 @@
 import { execFile, execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { promisify } from "node:util";
-import { buildCliPath } from "./cli";
 import {
   applyCodexAuthRegistry,
   parseCodexAuthError,
@@ -25,8 +24,7 @@ let cached: { at: number; accounts: Promise<Account[]> } | null = null;
 /** Fast local-only discovery used to create one Raycast row per stored account. */
 export function getCodexAccounts(): Account[] {
   try {
-    const command = resolveCodexAuthCommand();
-    return listCodexAccountsSync(command);
+    return listCodexAccountsSync();
   } catch (error) {
     return [unavailableAccount(error)];
   }
@@ -52,17 +50,12 @@ export async function fetchCodexAccount(id: string): Promise<Account> {
 }
 
 export async function switchCodexAccount(query: string, expectedId: string): Promise<void> {
-  const command = resolveCodexAuthCommand();
   const wasRunning = await isChatGptRunning();
   const expectedKey = expectedId.startsWith("codex-auth:") ? expectedId.slice("codex-auth:".length) : null;
   let switchedKey: string | null;
 
   try {
-    const { stdout } = await execFileAsync(command.file, [...command.prefix, "switch", query, "--json"], {
-      encoding: "utf8",
-      timeout: 30_000,
-      env: command.env,
-    });
+    const stdout = await runCodexAuth(["switch", query, "--json"], 30_000);
     switchedKey = parseCodexAuthSwitchJson(stdout);
 
     if (switchedKey === null) {
@@ -132,8 +125,7 @@ function listCodexAccounts(): Promise<Account[]> {
     return cached.accounts;
   }
 
-  const command = resolveCodexAuthCommand();
-  const accounts = listCodexAccountsAsync(command).then(addResetCredits);
+  const accounts = listCodexAccountsAsync().then(addResetCredits);
 
   cached = { at: Date.now(), accounts };
   return accounts;
@@ -143,14 +135,9 @@ function parseAccounts(output: string): Account[] {
   return applyCodexAuthRegistry(parseCodexAuthTable(output), readRegistry());
 }
 
-function listCodexAccountsSync(command: CodexAuthCommand): Account[] {
+function listCodexAccountsSync(): Account[] {
   try {
-    const output = execFileSync(command.file, [...command.prefix, "list", "--skip-api", "--json"], {
-      encoding: "utf8",
-      timeout: 5_000,
-      env: command.env,
-    });
-    const accounts = parseCodexAuthJson(output);
+    const accounts = parseCodexAuthJson(runCodexAuthSync(["list", "--skip-api", "--json"], 5_000));
 
     if (accounts !== null) {
       return accounts;
@@ -159,22 +146,12 @@ function listCodexAccountsSync(command: CodexAuthCommand): Account[] {
     // codex-auth v0.2 has no JSON output; retry with its table interface below.
   }
 
-  const output = execFileSync(command.file, [...command.prefix, "list", "--skip-api"], {
-    encoding: "utf8",
-    timeout: 5_000,
-    env: command.env,
-  });
-  return parseAccounts(output);
+  return parseAccounts(runCodexAuthSync(["list", "--skip-api"], 5_000));
 }
 
-async function listCodexAccountsAsync(command: CodexAuthCommand): Promise<Account[]> {
+async function listCodexAccountsAsync(): Promise<Account[]> {
   try {
-    const { stdout } = await execFileAsync(command.file, [...command.prefix, "list", "--json"], {
-      encoding: "utf8",
-      timeout: 30_000,
-      env: command.env,
-    });
-    const accounts = parseCodexAuthJson(stdout);
+    const accounts = parseCodexAuthJson(await runCodexAuth(["list", "--json"], 30_000));
 
     if (accounts !== null) {
       return accounts;
@@ -183,12 +160,7 @@ async function listCodexAccountsAsync(command: CodexAuthCommand): Promise<Accoun
     // codex-auth v0.2 has no JSON output; retry with its table interface below.
   }
 
-  const { stdout } = await execFileAsync(command.file, [...command.prefix, "list"], {
-    encoding: "utf8",
-    timeout: 30_000,
-    env: command.env,
-  });
-  return parseAccounts(stdout);
+  return parseAccounts(await runCodexAuth(["list"], 30_000));
 }
 
 function readRegistry(): unknown {
@@ -238,37 +210,73 @@ async function isChatGptRunning(): Promise<boolean> {
   }
 }
 
-type CodexAuthCommand = {
-  file: string;
-  prefix: string[];
-  env: NodeJS.ProcessEnv;
-};
+const OUTPUT_MARKER = "__CODEX_AUTH_OUTPUT__";
+// Markers split codex-auth's output from prompt/banner noise printed by the user's shell config.
+const SHELL_SCRIPT = `command -v codex-auth >/dev/null 2>&1 || exit 127; printf %s ${OUTPUT_MARKER}; printf %s ${OUTPUT_MARKER} >&2; exec codex-auth "$@"`;
 
-function resolveCodexAuthCommand(): CodexAuthCommand {
-  const bun = join(homedir(), ".bun/bin/bun");
-  const bunScript = join(homedir(), ".bun/bin/codex-auth");
+let shell: string | null = null;
 
-  if (existsSync(bun) && existsSync(bunScript)) {
-    return { file: bun, prefix: [bunScript], env: process.env };
+/** The user's zsh or bash; Raycast doesn't load ~/.zshrc, where bun/fnm/pnpm add themselves to PATH. */
+function findShell(): string {
+  if (shell) {
+    return shell;
   }
 
-  const executable = [
-    "/opt/homebrew/bin/codex-auth",
-    "/usr/local/bin/codex-auth",
-    join(homedir(), ".local/bin/codex-auth"),
-    join(homedir(), ".npm-global/bin/codex-auth"),
-    ...(process.env.PATH ?? "").split(":").map((directory) => join(directory, "codex-auth")),
-  ].find(existsSync);
+  const preferred = process.env.SHELL && /\/(zsh|bash)$/.test(process.env.SHELL) ? [process.env.SHELL] : [];
+  shell = [...preferred, "/bin/zsh", "/bin/bash"].find(existsSync) ?? "/bin/zsh";
+  return shell;
+}
 
-  if (!executable) {
-    throw new Error(INSTALL_MESSAGE);
+function shellArgs(args: readonly string[]): string[] {
+  return ["-ilc", SHELL_SCRIPT, "codex-auth", ...args];
+}
+
+function stripShellNoise(output: string): string {
+  const index = output.indexOf(OUTPUT_MARKER);
+  return index === -1 ? output : output.slice(index + OUTPUT_MARKER.length);
+}
+
+/** Cleans shell noise off a failed run's output and maps "command not found" to the install hint. */
+function codexAuthError(error: unknown): unknown {
+  if (!isRecord(error)) {
+    return error;
   }
 
-  return {
-    file: executable,
-    prefix: [],
-    env: { ...process.env, PATH: buildCliPath([dirname(executable)]) },
-  };
+  if (error.status === 127 || error.code === 127) {
+    return new Error(INSTALL_MESSAGE);
+  }
+
+  if (typeof error.stdout === "string") {
+    error.stdout = stripShellNoise(error.stdout);
+  }
+
+  if (typeof error.stderr === "string") {
+    error.stderr = stripShellNoise(error.stderr);
+  }
+
+  return error;
+}
+
+function runCodexAuthSync(args: readonly string[], timeout: number): string {
+  try {
+    const output = execFileSync(findShell(), shellArgs(args), {
+      encoding: "utf8",
+      timeout,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return stripShellNoise(output);
+  } catch (error) {
+    throw codexAuthError(error);
+  }
+}
+
+async function runCodexAuth(args: readonly string[], timeout: number): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync(findShell(), shellArgs(args), { encoding: "utf8", timeout });
+    return stripShellNoise(stdout);
+  } catch (error) {
+    throw codexAuthError(error);
+  }
 }
 
 function unavailableAccount(error: unknown): Account {
