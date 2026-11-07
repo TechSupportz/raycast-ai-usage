@@ -7,6 +7,8 @@ import {
   List,
   getPreferenceValues,
   openExtensionPreferences,
+  showToast,
+  Toast,
   useNavigation,
 } from "@raycast/api";
 import { Fragment, useState, type ReactElement } from "react";
@@ -16,7 +18,17 @@ import { getGlanceWindow } from "./account-display";
 import { formatResetTimeRemaining, parseResetExpiry } from "./reset-expiry";
 import { getBranding } from "./providers/branding";
 import { getPace, type Pace } from "./pace";
-import type { Account, AccountFailure, ResetCredit, ResetCreditsResponse, UsageWindow } from "./providers/types";
+import {
+  clampPercent,
+  formatPercent,
+  formatResetDate,
+  formatTimeUntil,
+  formatUpdatedAt,
+  getRemaining,
+  pickMenuBarAccount,
+} from "./menu-bar-display";
+import { readFavourite, writeFavourite } from "./menu-bar-favourite";
+import type { Account, AccountFailure, ResetCredit, ResetCreditsResponse } from "./providers/types";
 
 export default function Command() {
   const { showUsageUsed } = getPreferenceValues<{ showUsageUsed: boolean }>();
@@ -24,6 +36,12 @@ export default function Command() {
   // Controlled from the first render onwards, so nothing re-selects a row as
   // the accounts stream in one by one.
   const [selectedId, setSelectedId] = useState<string | undefined>(initialSelectedId);
+  // Null means no explicit favourite: the menu bar then shows the first account.
+  const [favouriteId, setFavouriteId] = useState(readFavourite);
+  const menuBarId = pickMenuBarAccount(
+    states.map((state) => state.config),
+    favouriteId,
+  )?.id;
   const refreshAction = (
     <Action title="Refresh" icon={Icon.ArrowClockwise} onAction={refresh} shortcut={{ modifiers: ["cmd"], key: "r" }} />
   );
@@ -54,6 +72,12 @@ export default function Command() {
           state={state}
           showUsageUsed={showUsageUsed}
           refreshAction={refreshAction}
+          isInMenuBar={state.config.id === menuBarId}
+          onShowInMenuBar={async () => {
+            setFavouriteId(state.config.id);
+            await writeFavourite(state.config.id);
+            await showToast({ style: Toast.Style.Success, title: `Showing ${state.config.label} in the menu bar` });
+          }}
           onRename={rename}
           onMoveUp={index > 0 ? () => move(state.config.id, -1) : undefined}
           onMoveDown={index < states.length - 1 ? () => move(state.config.id, 1) : undefined}
@@ -67,6 +91,8 @@ function AccountItem({
   state,
   showUsageUsed,
   refreshAction,
+  isInMenuBar,
+  onShowInMenuBar,
   onRename,
   onMoveUp,
   onMoveDown,
@@ -74,6 +100,9 @@ function AccountItem({
   state: AccountState;
   showUsageUsed: boolean;
   refreshAction: ReactElement;
+  /** Whether this is the account the AI Usage in Menu Bar command shows. */
+  isInMenuBar: boolean;
+  onShowInMenuBar: () => Promise<void>;
   onRename: RenameHandler;
   /** Absent when the account is already first, so the action is hidden. */
   onMoveUp?: () => void;
@@ -90,7 +119,12 @@ function AccountItem({
       icon={{ source: branding.icon, tintColor: getBrandTint(account) ?? branding.iconTint }}
       title={config.label}
       keywords={[branding.name, account?.email ?? "", formatPlan(account?.plan ?? null) ?? ""]}
-      accessories={getAccessories(account, isStale, state.refreshError, showUsageUsed)}
+      accessories={[
+        ...(isInMenuBar
+          ? [{ icon: { source: Icon.Star, tintColor: Color.Yellow }, tooltip: "Shown in the menu bar" }]
+          : []),
+        ...getAccessories(account, isStale, state.refreshError, showUsageUsed),
+      ]}
       detail={
         <AccountDetail
           state={state}
@@ -109,6 +143,14 @@ function AccountItem({
             />
           ) : null}
           {refreshAction}
+          {isInMenuBar ? null : (
+            <Action
+              title="Show in Menu Bar"
+              icon={Icon.Star}
+              shortcut={{ modifiers: ["cmd", "shift"], key: "m" }}
+              onAction={onShowInMenuBar}
+            />
+          )}
           <Action.Push
             title="Rename Account"
             icon={Icon.Pencil}
@@ -443,10 +485,6 @@ function buildResetRows(credits: ResetCredit[], availableCount: number | null): 
   ];
 }
 
-function getRemaining(window: UsageWindow): number {
-  return clampPercent(100 - window.usedPercent);
-}
-
 function getBrandTint(account: Account | null): Color | undefined {
   if (account === null) {
     return Color.SecondaryText;
@@ -505,52 +543,4 @@ function getRemainingColor(remainingPercent: number): Color {
   }
 
   return remainingPercent < 50 ? Color.Yellow : Color.Green;
-}
-
-function formatResetDate(timestampMs: number): string {
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(timestampMs));
-}
-
-/** How long ago we last heard from the provider; cached values can be minutes old. */
-function formatUpdatedAt(timestampMs: number): string {
-  const minutes = Math.floor((Date.now() - timestampMs) / 60000);
-
-  if (minutes < 1) {
-    return "Just now";
-  }
-
-  if (minutes < 60) {
-    return `${minutes}m ago`;
-  }
-
-  const hours = Math.floor(minutes / 60);
-
-  return hours < 24 ? `${hours}h ago` : formatResetDate(timestampMs);
-}
-
-function formatTimeUntil(timestampMs: number): string {
-  const totalMinutes = Math.max(0, Math.round((timestampMs - Date.now()) / 60000));
-  const days = Math.floor(totalMinutes / 1440);
-  const hours = Math.floor((totalMinutes % 1440) / 60);
-  const minutes = totalMinutes % 60;
-
-  if (days > 0) {
-    return `${days}d ${hours}h`;
-  }
-
-  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
-}
-
-function formatPercent(value: number): string {
-  return `${Math.round(clampPercent(value))}`;
-}
-
-function clampPercent(value: number): number {
-  return Math.min(100, Math.max(0, value));
 }

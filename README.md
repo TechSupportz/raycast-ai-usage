@@ -13,6 +13,14 @@ Every window shows how much you have left, coloured by how close you are to the 
 
 Enable **Show usage used** in the extension preferences to show the percentage used instead, in both the account list and every usage window. Colours still indicate how close you are to the limit.
 
+## Menu bar
+
+Run **AI Usage in Menu Bar** once to pin it to the macOS menu bar. It shows one account's 5-hour (ChatGPT) or session (Claude Code) limit, falling back to the weekly limit when there is none. Open the menu to see every account's windows.
+
+Pick which account the menu bar shows with **Show in Menu Bar** (⌘⇧M) in View AI Usage, or from the **Show in Menu Bar** submenu. The chosen account has a star in the list. Without a choice, the first account in your order is shown.
+
+The menu bar refreshes every 5 minutes and shares its cache with View AI Usage. Turn on **Show time until reset** in the command's preferences to add the reset countdown to the title, e.g. `58% · 2h 3m`.
+
 ## Multiple ChatGPT accounts
 
 ChatGPT account discovery requires [codex-auth](https://github.com/loongphy/codex-auth). Install it globally with npm or Bun:
