@@ -7,8 +7,6 @@ import {
   List,
   getPreferenceValues,
   openExtensionPreferences,
-  showToast,
-  Toast,
   useNavigation,
 } from "@raycast/api";
 import { Fragment, useState, type ReactElement } from "react";
@@ -16,6 +14,7 @@ import { getProgressIcon } from "@raycast/utils";
 import { useAccounts, type AccountState } from "./use-accounts";
 import { getGlanceWindow } from "./account-display";
 import { formatResetTimeRemaining, parseResetExpiry } from "./reset-expiry";
+import { formatExtraUsage } from "./extra-usage-display";
 import { getBranding } from "./providers/branding";
 import { getPace, type Pace } from "./pace";
 import {
@@ -25,9 +24,7 @@ import {
   formatTimeUntil,
   formatUpdatedAt,
   getRemaining,
-  pickMenuBarAccount,
 } from "./menu-bar-display";
-import { readFavourite, writeFavourite } from "./menu-bar-favourite";
 import type { Account, AccountFailure, ResetCredit, ResetCreditsResponse } from "./providers/types";
 
 export default function Command() {
@@ -36,12 +33,6 @@ export default function Command() {
   // Controlled from the first render onwards, so nothing re-selects a row as
   // the accounts stream in one by one.
   const [selectedId, setSelectedId] = useState<string | undefined>(initialSelectedId);
-  // Null means no explicit favourite: the menu bar then shows the first account.
-  const [favouriteId, setFavouriteId] = useState(readFavourite);
-  const menuBarId = pickMenuBarAccount(
-    states.map((state) => state.config),
-    favouriteId,
-  )?.id;
   const refreshAction = (
     <Action title="Refresh" icon={Icon.ArrowClockwise} onAction={refresh} shortcut={{ modifiers: ["cmd"], key: "r" }} />
   );
@@ -72,12 +63,6 @@ export default function Command() {
           state={state}
           showUsageUsed={showUsageUsed}
           refreshAction={refreshAction}
-          isInMenuBar={state.config.id === menuBarId}
-          onShowInMenuBar={async () => {
-            setFavouriteId(state.config.id);
-            await writeFavourite(state.config.id);
-            await showToast({ style: Toast.Style.Success, title: `Showing ${state.config.label} in the menu bar` });
-          }}
           onRename={rename}
           onMoveUp={index > 0 ? () => move(state.config.id, -1) : undefined}
           onMoveDown={index < states.length - 1 ? () => move(state.config.id, 1) : undefined}
@@ -91,8 +76,6 @@ function AccountItem({
   state,
   showUsageUsed,
   refreshAction,
-  isInMenuBar,
-  onShowInMenuBar,
   onRename,
   onMoveUp,
   onMoveDown,
@@ -100,9 +83,6 @@ function AccountItem({
   state: AccountState;
   showUsageUsed: boolean;
   refreshAction: ReactElement;
-  /** Whether this is the account the AI Usage in Menu Bar command shows. */
-  isInMenuBar: boolean;
-  onShowInMenuBar: () => Promise<void>;
   onRename: RenameHandler;
   /** Absent when the account is already first, so the action is hidden. */
   onMoveUp?: () => void;
@@ -119,12 +99,7 @@ function AccountItem({
       icon={{ source: branding.icon, tintColor: getBrandTint(account) ?? branding.iconTint }}
       title={config.label}
       keywords={[branding.name, account?.email ?? "", formatPlan(account?.plan ?? null) ?? ""]}
-      accessories={[
-        ...(isInMenuBar
-          ? [{ icon: { source: Icon.Star, tintColor: Color.Yellow }, tooltip: "Shown in the menu bar" }]
-          : []),
-        ...getAccessories(account, isStale, state.refreshError, showUsageUsed),
-      ]}
+      accessories={getAccessories(account, isStale, state.refreshError, showUsageUsed)}
       detail={
         <AccountDetail
           state={state}
@@ -143,14 +118,6 @@ function AccountItem({
             />
           ) : null}
           {refreshAction}
-          {isInMenuBar ? null : (
-            <Action
-              title="Show in Menu Bar"
-              icon={Icon.Star}
-              shortcut={{ modifiers: ["cmd", "shift"], key: "m" }}
-              onAction={onShowInMenuBar}
-            />
-          )}
           <Action.Push
             title="Rename Account"
             icon={Icon.Pencil}
@@ -297,6 +264,15 @@ function AccountDetail({
 }) {
   const sections = [
     ...buildWindowSections(state, showUsageUsed),
+    state.account?.extraUsage
+      ? [
+          <List.Item.Detail.Metadata.Label
+            key="extra-usage"
+            title="Usage Credits"
+            text={formatExtraUsage(state.account.extraUsage)}
+          />,
+        ]
+      : [],
     buildAccountRows(state),
     buildResetRows(resets, resetCount),
     buildMetaRows(state),

@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { mergeClaudeOAuthCredentials, shouldRefresh, type ClaudeOAuthRefresh } from "./claude-refresh";
 import { parseClaudeResetCredits } from "./claude-reset-credits";
 import { parseClaudeUsagePayload } from "./claude-usage";
-import { isRecord, type Account, type ResetCreditsResponse, type UsageWindow } from "./types";
+import { isRecord, type Account, type ExtraUsage, type ResetCreditsResponse, type UsageWindow } from "./types";
 
 const execFileAsync = promisify(execFile);
 
@@ -457,12 +457,16 @@ function delay(milliseconds: number): Promise<void> {
 
 type ClaudeUsageClient = { url: string; userAgent: string; includesResets: boolean };
 
-const STANDARD_USAGE_CLIENT: ClaudeUsageClient = { url: USAGE_URL, userAgent: USER_AGENT, includesResets: false };
+const STANDARD_USAGE_CLIENT: ClaudeUsageClient = {
+  url: `${USAGE_URL}?skip_spend=1`,
+  userAgent: USER_AGENT,
+  includesResets: false,
+};
 
 async function fetchUsage(
   credentials: Credentials,
   client: Promise<ClaudeUsageClient>,
-): Promise<{ windows: UsageWindow[]; resets: ResetCreditsResponse | null }> {
+): Promise<{ windows: UsageWindow[]; resets: ResetCreditsResponse | null; extraUsage: ExtraUsage | null }> {
   let token = credentials.accessToken;
   let usage = await requestUsageWithFallback(token, await client);
 
@@ -494,10 +498,47 @@ async function fetchUsage(
   }
 
   const payload = await usage.response.json();
+  const windows = parseClaudeUsagePayload(payload);
+  const extraUsage = hasDepletedLimit(windows) ? await fetchExtraUsage(token, usage.client) : null;
   return {
-    windows: parseClaudeUsagePayload(payload),
+    windows,
+    extraUsage,
     resets: usage.client.includesResets ? parseClaudeResetCredits(payload) : null,
   };
+}
+
+/** A passed reset no longer establishes that the account is at its limit. */
+function hasDepletedLimit(windows: UsageWindow[]): boolean {
+  return windows.some(
+    (window) =>
+      Number.isFinite(window.usedPercent) &&
+      window.usedPercent >= 100 &&
+      (window.resetsAt === null || window.resetsAt > Date.now()),
+  );
+}
+
+async function fetchExtraUsage(token: string, client: ClaudeUsageClient): Promise<ExtraUsage | null> {
+  try {
+    const url = new URL(client.url);
+    url.searchParams.delete("skip_spend");
+    const response = await requestUsage(token, { ...client, url: url.toString() });
+    if (!response.ok) return null;
+    const payload: unknown = await response.json();
+    if (!isRecord(payload) || !isRecord(payload.extra_usage)) return null;
+    const extra = payload.extra_usage;
+    if (extra.is_enabled !== true || !isNonnegativeAmount(extra.used_credits)) return null;
+    if (extra.monthly_limit !== null && !isNonnegativeAmount(extra.monthly_limit)) return null;
+    // Recheck the windows: they may have reset between the two requests.
+    if (!hasDepletedLimit(parseClaudeUsagePayload(payload))) return null;
+    return { usedCredits: extra.used_credits, monthlyLimit: extra.monthly_limit };
+  } catch {
+    // Spend is optional; retain the authoritative usage windows on failure.
+    return null;
+  }
+}
+
+function isNonnegativeAmount(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
 async function requestUsageWithFallback(

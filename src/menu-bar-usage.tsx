@@ -10,11 +10,10 @@ import {
   openExtensionPreferences,
 } from "@raycast/api";
 import { getProgressIcon as drawProgressRing } from "@raycast/utils";
-import { useState } from "react";
 import { useAccounts, type AccountState } from "./use-accounts";
 import { getGlanceWindow } from "./account-display";
+import { formatExtraUsage } from "./extra-usage-display";
 import { getBranding } from "./providers/branding";
-import { readFavourite, writeFavourite } from "./menu-bar-favourite";
 import {
   formatMenuBarTitle,
   formatPercent,
@@ -28,22 +27,22 @@ import {
 import type { UsageWindow } from "./providers/types";
 
 type Preferences = {
+  menuBarAccount?: string;
   showUsageUsed: boolean;
   showResetTime: boolean;
 };
 
 /**
- * Shows the favourite account's glance window (the 5-hour / session limit when
+ * Shows the configured account's glance window (the 5-hour / session limit when
  * there is one) in the menu bar, with every account's windows in the menu.
  * Shares `useAccounts`, and with it the cache, with the View AI Usage command.
  */
 export default function Command() {
-  const { showUsageUsed, showResetTime } = getPreferenceValues<Preferences>();
+  const { menuBarAccount, showUsageUsed, showResetTime } = getPreferenceValues<Preferences>();
   const { states, isLoading, refresh } = useAccounts();
-  const [favouriteId, setFavouriteId] = useState(readFavourite);
   const featuredId = pickMenuBarAccount(
-    states.map((state) => state.config),
-    favouriteId,
+    states.map((state) => ({ ...state.config, email: state.account?.email })),
+    menuBarAccount ?? null,
   )?.id;
   const featured = states.find((state) => state.config.id === featuredId) ?? null;
 
@@ -55,25 +54,8 @@ export default function Command() {
       {states.map((state) => (
         <AccountSection key={state.config.id} state={state} showUsageUsed={showUsageUsed} />
       ))}
-      {states.length > 1 ? (
-        <MenuBarExtra.Section>
-          <MenuBarExtra.Submenu title="Show in Menu Bar" icon={Icon.Star}>
-            {states.map((state) => (
-              <MenuBarExtra.Item
-                key={state.config.id}
-                title={state.config.label}
-                subtitle={getBranding(state.config.provider).name}
-                icon={state.config.id === featured?.config.id ? Icon.Checkmark : undefined}
-                onAction={async () => {
-                  setFavouriteId(state.config.id);
-                  await writeFavourite(state.config.id);
-                }}
-              />
-            ))}
-          </MenuBarExtra.Submenu>
-        </MenuBarExtra.Section>
-      ) : null}
       <MenuBarExtra.Section>
+        <MenuBarExtra.Item title="Open Preferences" icon={Icon.Gear} onAction={openExtensionPreferences} />
         <MenuBarExtra.Item
           {...getRefreshText(isLoading, getLatestFetchedAt(states))}
           icon={Icon.ArrowClockwise}
@@ -157,6 +139,13 @@ function AccountSection({ state, showUsageUsed }: { state: AccountState; showUsa
           subtitle={state.fetchedAt === null ? undefined : `last updated ${describeUpdatedAt(state.fetchedAt)}`}
           icon={{ source: Icon.Warning, tintColor: Color.Orange }}
           tooltip={state.refreshError.message}
+          onAction={openUsageView}
+        />
+      ) : null}
+      {account.extraUsage ? (
+        <MenuBarExtra.Item
+          title="Usage Credits"
+          subtitle={formatExtraUsage(account.extraUsage)}
           onAction={openUsageView}
         />
       ) : null}

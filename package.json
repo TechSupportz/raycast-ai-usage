@@ -23,10 +23,18 @@
       "name": "menu-bar-usage",
       "title": "AI Usage in Menu Bar",
       "subtitle": "AI Usage",
-      "description": "Show your favourite account's 5-hour or session limit in the menu bar",
+      "description": "Show your chosen account's 5-hour or session limit in the menu bar",
       "mode": "menu-bar",
       "interval": "5m",
       "preferences": [
+        {
+          "name": "menuBarAccount",
+          "title": "Menu Bar Account",
+          "description": "Account email or display name to show in the menu bar (e.g. Claude Code). Leave empty to use the first account in your order.",
+          "type": "textfield",
+          "required": false,
+          "default": ""
+        },
         {
           "name": "showResetTime",
           "title": "Menu Bar Title",

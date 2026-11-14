@@ -33,6 +33,11 @@ export type AccountFailure = {
 
 export type ProviderId = "codex" | "claude";
 
+export type ExtraUsage = {
+  usedCredits: number;
+  monthlyLimit: number | null;
+};
+
 export type Account = {
   id: string;
   provider: ProviderId;
@@ -44,6 +49,8 @@ export type Account = {
   windows: UsageWindow[];
   /** Null when banked reset data is not available from the provider. */
   resets: ResetCreditsResponse | null;
+  /** Spend amounts in USD cents, available only while a Claude limit is depleted. */
+  extraUsage?: ExtraUsage | null;
   failure: AccountFailure | null;
 };
 

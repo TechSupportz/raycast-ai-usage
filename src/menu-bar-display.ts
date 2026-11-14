@@ -1,15 +1,19 @@
 import type { UsageWindow } from "./providers/types";
 
-/**
- * The account shown in the menu bar: the favourite when it is still
- * configured, otherwise the first account in the user's order. Falling back
- * keeps the menu bar useful after a favourite is signed out or turned off.
- */
-export function pickMenuBarAccount<T extends { id: string }>(
+/** Resolve the Raycast preference by ID, email, or display name; empty or missing choices use the first account. */
+export function pickMenuBarAccount<T extends { id: string; label?: string; email?: string | null }>(
   accounts: readonly T[],
-  favouriteId: string | null,
+  selection: string | null,
 ): T | null {
-  return accounts.find((account) => account.id === favouriteId) ?? accounts[0] ?? null;
+  const value = selection?.trim().toLowerCase();
+  if (!value) return accounts[0] ?? null;
+  return (
+    accounts.find((account) => account.id.toLowerCase() === value) ??
+    accounts.find((account) => account.email?.toLowerCase() === value) ??
+    accounts.find((account) => account.label?.toLowerCase() === value) ??
+    accounts[0] ??
+    null
+  );
 }
 
 /**
