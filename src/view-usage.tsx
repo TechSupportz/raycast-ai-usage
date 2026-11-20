@@ -12,7 +12,7 @@ import {
 import { Fragment, useState, type ReactElement } from "react";
 import { getProgressIcon } from "@raycast/utils";
 import { useAccounts, type AccountState } from "./use-accounts";
-import { getGlanceWindow } from "./account-display";
+import { formatProductPlan, getGlanceWindow, getVisibleWindows } from "./account-display";
 import { formatResetTimeRemaining, parseResetExpiry } from "./reset-expiry";
 import { formatExtraUsage } from "./extra-usage-display";
 import { getBranding } from "./providers/branding";
@@ -28,7 +28,10 @@ import {
 import type { Account, AccountFailure, ResetCredit, ResetCreditsResponse } from "./providers/types";
 
 export default function Command() {
-  const { showUsageUsed } = getPreferenceValues<{ showUsageUsed: boolean }>();
+  const { showUsageUsed, showAntigravityClaudeGpt } = getPreferenceValues<{
+    showUsageUsed: boolean;
+    showAntigravityClaudeGpt: boolean;
+  }>();
   const { states, isLoading, refresh, rename, move, initialSelectedId } = useAccounts();
   // Controlled from the first render onwards, so nothing re-selects a row as
   // the accounts stream in one by one.
@@ -49,7 +52,7 @@ export default function Command() {
         <List.EmptyView
           icon={Icon.Gauge}
           title="No Accounts Configured"
-          description="Add an account with codex-auth, or turn on ChatGPT or Claude Code in this extension's preferences."
+          description="Add an account with codex-auth, or turn on ChatGPT, Claude Code, or Antigravity in this extension's preferences."
           actions={
             <ActionPanel>
               <Action title="Open Preferences" icon={Icon.Gear} onAction={openExtensionPreferences} />
@@ -62,6 +65,7 @@ export default function Command() {
           key={state.config.id}
           state={state}
           showUsageUsed={showUsageUsed}
+          showAntigravityClaudeGpt={showAntigravityClaudeGpt}
           refreshAction={refreshAction}
           onRename={rename}
           onMoveUp={index > 0 ? () => move(state.config.id, -1) : undefined}
@@ -75,6 +79,7 @@ export default function Command() {
 function AccountItem({
   state,
   showUsageUsed,
+  showAntigravityClaudeGpt,
   refreshAction,
   onRename,
   onMoveUp,
@@ -82,6 +87,7 @@ function AccountItem({
 }: {
   state: AccountState;
   showUsageUsed: boolean;
+  showAntigravityClaudeGpt: boolean;
   refreshAction: ReactElement;
   onRename: RenameHandler;
   /** Absent when the account is already first, so the action is hidden. */
@@ -99,13 +105,14 @@ function AccountItem({
       icon={{ source: branding.icon, tintColor: getBrandTint(account) ?? branding.iconTint }}
       title={config.label}
       keywords={[branding.name, account?.email ?? "", formatPlan(account?.plan ?? null) ?? ""]}
-      accessories={getAccessories(account, isStale, state.refreshError, showUsageUsed)}
+      accessories={getAccessories(account, isStale, state.refreshError, showUsageUsed, showAntigravityClaudeGpt)}
       detail={
         <AccountDetail
           state={state}
           resets={resets}
           resetCount={account?.resets?.available_count ?? null}
           showUsageUsed={showUsageUsed}
+          showAntigravityClaudeGpt={showAntigravityClaudeGpt}
         />
       }
       actions={
@@ -199,6 +206,7 @@ function getAccessories(
   isStale: boolean,
   refreshError: AccountFailure | null,
   showUsageUsed: boolean,
+  showAntigravityClaudeGpt: boolean,
 ): List.Item.Accessory[] {
   if (account === null) {
     return [{ tag: { value: "…", color: Color.SecondaryText } }];
@@ -216,7 +224,8 @@ function getAccessories(
     ];
   }
 
-  const glanceWindow = getGlanceWindow(account.provider, account.windows);
+  const visibleWindows = getVisibleWindows(account.provider, account.windows, { showAntigravityClaudeGpt });
+  const glanceWindow = getGlanceWindow(account.provider, visibleWindows);
   const accessories: List.Item.Accessory[] = [];
 
   if (glanceWindow) {
@@ -256,14 +265,16 @@ function AccountDetail({
   resets,
   resetCount,
   showUsageUsed,
+  showAntigravityClaudeGpt,
 }: {
   state: AccountState;
   resets: ResetCredit[];
   resetCount: number | null;
   showUsageUsed: boolean;
+  showAntigravityClaudeGpt: boolean;
 }) {
   const sections = [
-    ...buildWindowSections(state, showUsageUsed),
+    ...buildWindowSections(state, showUsageUsed, showAntigravityClaudeGpt),
     state.account?.extraUsage
       ? [
           <List.Item.Detail.Metadata.Label
@@ -287,7 +298,7 @@ function AccountDetail({
 
   return (
     <List.Item.Detail
-      markdown={buildMarkdown(state)}
+      markdown={buildMarkdown(state, showAntigravityClaudeGpt)}
       metadata={<List.Item.Detail.Metadata>{sections}</List.Item.Detail.Metadata>}
     />
   );
@@ -298,9 +309,17 @@ function AccountDetail({
  * account is still loading we list the windows this provider usually returns,
  * so the pane keeps its shape instead of jumping when the real response lands.
  */
-function buildWindowSections({ config, account }: AccountState, showUsageUsed: boolean): ReactElement[][] {
+function buildWindowSections(
+  { config, account }: AccountState,
+  showUsageUsed: boolean,
+  showAntigravityClaudeGpt: boolean,
+): ReactElement[][] {
   if (account === null) {
-    return getBranding(config.provider).skeletonWindows.map((label) => [
+    const skeletonWindows = getBranding(config.provider).skeletonWindows.filter(
+      (label) => config.provider !== "antigravity" || showAntigravityClaudeGpt || !label.startsWith("Claude/GPT"),
+    );
+
+    return skeletonWindows.map((label) => [
       <List.Item.Detail.Metadata.Label
         key={label}
         title={label}
@@ -322,9 +341,11 @@ function buildWindowSections({ config, account }: AccountState, showUsageUsed: b
     ];
   }
 
+  const visibleWindows = getVisibleWindows(account.provider, account.windows, { showAntigravityClaudeGpt });
+
   // Two lines per window: usage and its pace as pills, then a plain
   // line for when it comes back.
-  return account.windows.map((window) => {
+  return visibleWindows.map((window) => {
     const remaining = getRemaining(window);
     const percent = showUsageUsed ? clampPercent(window.usedPercent) : remaining;
     const resetsAt = window.resetsAt;
@@ -376,13 +397,11 @@ const PACE_COLORS: Record<Pace["status"], Color> = {
 /** Who this account is: the product and plan as one line, then the signed-in address. */
 function buildAccountRows({ config, account }: AccountState): ReactElement[] {
   const branding = getBranding(config.provider);
-  const plan = formatPlan(account?.plan ?? null);
-  const product = config.provider === "codex" ? "ChatGPT" : "Claude";
   const rows = [
     <List.Item.Detail.Metadata.Label
       key="plan"
       title="Plan"
-      text={plan ? `${product} ${plan}` : product}
+      text={formatProductPlan(config.provider, account?.plan ?? null)}
       icon={{ source: branding.icon, tintColor: branding.iconTint }}
     />,
   ];
@@ -424,12 +443,12 @@ function buildMetaRows({ fetchedAt, refreshError }: AccountState): ReactElement[
 }
 
 /** Only states that need a sentence get prose; healthy accounts are metadata alone. */
-function buildMarkdown({ config, account }: AccountState): string | undefined {
+function buildMarkdown({ config, account }: AccountState, showAntigravityClaudeGpt: boolean): string | undefined {
   if (account?.failure) {
     return [`# ${config.label}`, account.failure.message].join("\n\n");
   }
 
-  if (account && account.windows.length === 0) {
+  if (account && getVisibleWindows(account.provider, account.windows, { showAntigravityClaudeGpt }).length === 0) {
     return [`# ${config.label}`, "This account reported no usage limits."].join("\n\n");
   }
 

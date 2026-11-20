@@ -11,7 +11,7 @@ import {
 } from "@raycast/api";
 import { getProgressIcon as drawProgressRing } from "@raycast/utils";
 import { useAccounts, type AccountState } from "./use-accounts";
-import { getGlanceWindow } from "./account-display";
+import { getGlanceWindow, getVisibleWindows } from "./account-display";
 import { formatExtraUsage } from "./extra-usage-display";
 import { getBranding } from "./providers/branding";
 import {
@@ -30,6 +30,7 @@ type Preferences = {
   menuBarAccount?: string;
   showUsageUsed: boolean;
   showResetTime: boolean;
+  showAntigravityClaudeGpt: boolean;
 };
 
 /**
@@ -38,7 +39,7 @@ type Preferences = {
  * Shares `useAccounts`, and with it the cache, with the View AI Usage command.
  */
 export default function Command() {
-  const { menuBarAccount, showUsageUsed, showResetTime } = getPreferenceValues<Preferences>();
+  const { menuBarAccount, showUsageUsed, showResetTime, showAntigravityClaudeGpt } = getPreferenceValues<Preferences>();
   const { states, isLoading, refresh } = useAccounts();
   const featuredId = pickMenuBarAccount(
     states.map((state) => ({ ...state.config, email: state.account?.email })),
@@ -47,12 +48,20 @@ export default function Command() {
   const featured = states.find((state) => state.config.id === featuredId) ?? null;
 
   return (
-    <MenuBarExtra isLoading={isLoading} {...getTitle(featured, { showUsageUsed, showResetTime })}>
+    <MenuBarExtra
+      isLoading={isLoading}
+      {...getTitle(featured, { showUsageUsed, showResetTime, showAntigravityClaudeGpt })}
+    >
       {states.length === 0 ? (
         <MenuBarExtra.Item title="No accounts configured" onAction={openExtensionPreferences} />
       ) : null}
       {states.map((state) => (
-        <AccountSection key={state.config.id} state={state} showUsageUsed={showUsageUsed} />
+        <AccountSection
+          key={state.config.id}
+          state={state}
+          showUsageUsed={showUsageUsed}
+          showAntigravityClaudeGpt={showAntigravityClaudeGpt}
+        />
       ))}
       <MenuBarExtra.Section>
         <MenuBarExtra.Item title="Open Preferences" icon={Icon.Gear} onAction={openExtensionPreferences} />
@@ -70,7 +79,7 @@ export default function Command() {
 /** The menu bar's own icon, title and tooltip for the featured account. */
 function getTitle(
   state: AccountState | null,
-  options: { showUsageUsed: boolean; showResetTime: boolean },
+  options: { showUsageUsed: boolean; showResetTime: boolean; showAntigravityClaudeGpt: boolean },
 ): { icon: MenuBarExtra.Props["icon"]; title?: string; tooltip: string } {
   if (state === null) {
     return { icon: Icon.Gauge, tooltip: "AI Usage: no accounts configured" };
@@ -91,7 +100,10 @@ function getTitle(
     };
   }
 
-  const window = getGlanceWindow(account.provider, account.windows);
+  const visibleWindows = getVisibleWindows(account.provider, account.windows, {
+    showAntigravityClaudeGpt: options.showAntigravityClaudeGpt,
+  });
+  const window = getGlanceWindow(account.provider, visibleWindows);
 
   if (window === null) {
     return { icon, tooltip: `${config.label}: no usage limits reported` };
@@ -104,7 +116,15 @@ function getTitle(
   };
 }
 
-function AccountSection({ state, showUsageUsed }: { state: AccountState; showUsageUsed: boolean }) {
+function AccountSection({
+  state,
+  showUsageUsed,
+  showAntigravityClaudeGpt,
+}: {
+  state: AccountState;
+  showUsageUsed: boolean;
+  showAntigravityClaudeGpt: boolean;
+}) {
   const { config, account } = state;
   const branding = getBranding(config.provider);
   // Claude Code's label is its product name, so it would read "Claude Code · Claude Code".
@@ -131,6 +151,8 @@ function AccountSection({ state, showUsageUsed }: { state: AccountState; showUsa
     );
   }
 
+  const visibleWindows = getVisibleWindows(account.provider, account.windows, { showAntigravityClaudeGpt });
+
   return (
     <MenuBarExtra.Section title={title}>
       {state.refreshError ? (
@@ -149,7 +171,7 @@ function AccountSection({ state, showUsageUsed }: { state: AccountState; showUsa
           onAction={openUsageView}
         />
       ) : null}
-      {account.windows.map((window) => (
+      {visibleWindows.map((window) => (
         <MenuBarExtra.Item
           key={window.id}
           title={window.label}

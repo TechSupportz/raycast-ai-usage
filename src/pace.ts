@@ -27,6 +27,14 @@ export function getWindowDurationMs(window: UsageWindow): number | null {
       return WEEK_MS;
   }
 
+  if (window.id.startsWith("antigravity:summary:5h:")) {
+    return FIVE_HOURS_MS;
+  }
+
+  if (window.id.startsWith("antigravity:summary:weekly:")) {
+    return WEEK_MS;
+  }
+
   const minutes = Number(window.id);
 
   if (Number.isFinite(minutes) && minutes > 0) {

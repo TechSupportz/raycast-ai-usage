@@ -10,11 +10,17 @@ function window(overrides: Partial<UsageWindow>): UsageWindow {
   return { id: "300", label: "5h Limit", usedPercent: 0, resetsAt: now + 2.5 * HOUR, ...overrides };
 }
 
-test("reads window lengths from Codex minutes and Claude names", () => {
+test("reads window lengths from Codex minutes, Claude names, and Antigravity summary IDs", () => {
   assert.equal(getWindowDurationMs(window({ id: "300" })), 5 * HOUR);
   assert.equal(getWindowDurationMs(window({ id: "10080", label: "Weekly Limit" })), 7 * 24 * HOUR);
   assert.equal(getWindowDurationMs(window({ id: "five_hour", label: "Session Limit" })), 5 * HOUR);
   assert.equal(getWindowDurationMs(window({ id: "seven_day", label: "Weekly Limit" })), 7 * 24 * HOUR);
+  assert.equal(getWindowDurationMs(window({ id: "antigravity:summary:5h:gemini-5h", label: "Gemini 5h" })), 5 * HOUR);
+  assert.equal(
+    getWindowDurationMs(window({ id: "antigravity:summary:weekly:gemini-weekly", label: "Gemini Weekly" })),
+    7 * 24 * HOUR,
+  );
+  assert.equal(getWindowDurationMs(window({ id: "antigravity:pool:gemini", label: "Gemini" })), null);
   assert.equal(getWindowDurationMs(window({ id: "mystery", label: "Other" })), null);
 });
 

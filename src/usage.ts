@@ -1,4 +1,5 @@
 import { getPreferenceValues } from "@raycast/api";
+import { ANTIGRAVITY_ACCOUNT_ID, fetchAntigravityAccount } from "./providers/antigravity";
 import { CLAUDE_ACCOUNT_ID, fetchClaudeAccount } from "./providers/claude";
 import { fetchCodexAccount, getCodexAccounts } from "./providers/codex";
 import type { Account, ProviderId } from "./providers/types";
@@ -6,6 +7,7 @@ import type { Account, ProviderId } from "./providers/types";
 type Preferences = {
   showCodex: boolean;
   showClaudeCode: boolean;
+  showAntigravity: boolean;
 };
 
 /**
@@ -20,6 +22,7 @@ type Preferences = {
 const REFRESH_INTERVAL_MS: Record<ProviderId, number> = {
   claude: 60 * 1000,
   codex: 60 * 1000,
+  antigravity: 60 * 1000,
 };
 
 /**
@@ -37,7 +40,7 @@ export type ConfiguredAccount = {
 };
 
 export function getConfiguredAccounts(): ConfiguredAccount[] {
-  const { showCodex, showClaudeCode } = getPreferenceValues<Preferences>();
+  const { showCodex, showClaudeCode, showAntigravity } = getPreferenceValues<Preferences>();
 
   const accounts: ConfiguredAccount[] = (showCodex ? getCodexAccounts() : []).map((account) => ({
     id: account.id,
@@ -54,6 +57,16 @@ export function getConfiguredAccounts(): ConfiguredAccount[] {
       label: "Claude Code",
       refreshIntervalMs: REFRESH_INTERVAL_MS.claude,
       fetch: fetchClaudeAccount,
+    });
+  }
+
+  if (showAntigravity) {
+    accounts.push({
+      id: ANTIGRAVITY_ACCOUNT_ID,
+      provider: "antigravity",
+      label: "Antigravity",
+      refreshIntervalMs: REFRESH_INTERVAL_MS.antigravity,
+      fetch: fetchAntigravityAccount,
     });
   }
 

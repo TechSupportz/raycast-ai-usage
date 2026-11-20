@@ -16,8 +16,8 @@ type Branding = {
 };
 
 /**
- * `claude.svg` is the official mark from Simple Icons (CC0); `chatgpt.svg` is
- * the OpenAI mark from LobeHub Icons (MIT).
+ * `claude.svg` is the official mark from Simple Icons (CC0); `chatgpt.svg` and
+ * `antigravity.svg` are from LobeHub Icons (MIT).
  */
 const BRANDING: Record<ProviderId, Branding> = {
   codex: {
@@ -30,6 +30,11 @@ const BRANDING: Record<ProviderId, Branding> = {
     name: "Claude Code",
     icon: "claude.svg",
     skeletonWindows: ["Session Limit", "Weekly Limit"],
+  },
+  antigravity: {
+    name: "Antigravity",
+    icon: "antigravity.svg",
+    skeletonWindows: ["Gemini 5h", "Gemini Weekly", "Claude/GPT 5h", "Claude/GPT Weekly"],
   },
 };
 

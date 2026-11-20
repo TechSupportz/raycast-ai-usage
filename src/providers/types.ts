@@ -31,7 +31,7 @@ export type AccountFailure = {
   message: string;
 };
 
-export type ProviderId = "codex" | "claude";
+export type ProviderId = "codex" | "claude" | "antigravity";
 
 export type ExtraUsage = {
   usedCredits: number;
