@@ -86,7 +86,7 @@
     {
       "name": "menuBarProvider",
       "title": "Provider",
-      "description": "Pick the provider to show as the menubar icon.",
+      "description": "Pick the provider to show in the menu bar. Turn the menu bar command off and on to apply.",
       "type": "dropdown",
       "required": false,
       "default": "auto",
@@ -113,7 +113,7 @@
       "name": "menuBarAccountName",
       "title": "Account",
       "placeholder": "Email or name (optional)",
-      "description": "Pick a specific account when a provider has multiple.",
+      "description": "Pick a specific account when a provider has multiple. Turn the menu bar command off and on to apply.",
       "type": "textfield",
       "required": false,
       "default": ""
