@@ -9,7 +9,12 @@ import {
 } from "./menu-bar-display.ts";
 import type { UsageWindow } from "./providers/types.ts";
 
-const accounts = [{ id: "codex:a" }, { id: "claude-code" }];
+const accounts = [
+  { id: "codex:a", provider: "codex" as const, label: "Personal", configuredLabel: "personal@example.com", email: "personal@example.com" },
+  { id: "codex:b", provider: "codex" as const, label: "Work", configuredLabel: "work@example.com", email: null },
+  { id: "claude-code", provider: "claude" as const, label: "Claude Code", configuredLabel: "Claude Code", email: null },
+  { id: "antigravity", provider: "antigravity" as const, label: "Antigravity", configuredLabel: "Antigravity", email: "ag@example.com" },
+];
 const now = Date.UTC(2026, 0, 1);
 const session: UsageWindow = {
   id: "five_hour",
@@ -18,20 +23,39 @@ const session: UsageWindow = {
   resetsAt: now + (2 * 60 + 3) * 60 * 1000,
 };
 
-test("shows the favourite account when it is configured", () => {
-  assert.equal(pickMenuBarAccount(accounts, "claude-code"), accounts[1]);
+test("picks the selected provider from the dropdown", () => {
+  assert.equal(pickMenuBarAccount(accounts, { provider: "claude" }), accounts[2]);
+  assert.equal(pickMenuBarAccount(accounts, { provider: "antigravity" }), accounts[3]);
 });
 
-test("falls back to the first account without a favourite", () => {
+test("picks the first account for a provider when no account filter is given", () => {
+  assert.equal(pickMenuBarAccount(accounts, { provider: "codex", account: "" }), accounts[0]);
+});
+
+test("picks a specific account within the selected provider by display name, email, or configured label", () => {
+  assert.equal(pickMenuBarAccount(accounts, { provider: "codex", account: "Work" }), accounts[1]);
+  assert.equal(pickMenuBarAccount(accounts, { provider: "codex", account: "work@example.com" }), accounts[1]);
+  assert.equal(pickMenuBarAccount(accounts, { provider: "codex", account: "PERSONAL@example.com" }), accounts[0]);
+});
+
+test("falls back to the first account of the chosen provider when the account filter does not match", () => {
+  assert.equal(pickMenuBarAccount(accounts, { provider: "codex", account: "Claude Code" }), accounts[0]);
+  assert.equal(pickMenuBarAccount(accounts, { provider: "codex", account: "missing@example.com" }), accounts[0]);
+});
+
+test("matches across all providers when provider is auto or unset", () => {
+  assert.equal(pickMenuBarAccount(accounts, { provider: "auto", account: "claude-code" }), accounts[2]);
+  assert.equal(pickMenuBarAccount(accounts, { account: "ag@example.com" }), accounts[3]);
+});
+
+test("falls back to the first account without a preference or when the chosen provider is absent", () => {
   assert.equal(pickMenuBarAccount(accounts, null), accounts[0]);
-});
-
-test("falls back to the first account when the favourite is gone", () => {
-  assert.equal(pickMenuBarAccount(accounts, "codex:removed"), accounts[0]);
+  assert.equal(pickMenuBarAccount(accounts, { provider: "auto", account: "" }), accounts[0]);
+  assert.equal(pickMenuBarAccount(accounts.slice(0, 2), { provider: "claude" }), accounts[0]);
 });
 
 test("returns null when no accounts are configured", () => {
-  assert.equal(pickMenuBarAccount([], "claude-code"), null);
+  assert.equal(pickMenuBarAccount([], { provider: "claude", account: "claude-code" }), null);
 });
 
 test("shows usage left by default", () => {

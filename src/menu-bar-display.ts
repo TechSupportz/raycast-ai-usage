@@ -1,17 +1,39 @@
-import type { UsageWindow } from "./providers/types";
+import type { ProviderId, UsageWindow } from "./providers/types";
 
-/** Resolve the Raycast preference by ID, email, or display name; empty or missing choices use the first account. */
-export function pickMenuBarAccount<T extends { id: string; label?: string; email?: string | null }>(
-  accounts: readonly T[],
-  selection: string | null,
-): T | null {
-  const value = selection?.trim().toLowerCase();
-  if (!value) return accounts[0] ?? null;
+export type MenuBarProviderPreference = ProviderId | "auto";
+
+export type MenuBarSelection = {
+  provider?: MenuBarProviderPreference | string | null;
+  account?: string | null;
+};
+
+/**
+ * Resolve the menu bar preferences (provider dropdown + optional email/name) to
+ * one configured account. Filters by provider when one is chosen, then matches
+ * by ID, email, display name, or configured label within the candidate list,
+ * falling back to the first matching provider account and finally the first
+ * account overall.
+ */
+export function pickMenuBarAccount<
+  T extends { id: string; provider?: ProviderId; label?: string; configuredLabel?: string; email?: string | null },
+>(accounts: readonly T[], selection: MenuBarSelection | null): T | null {
+  const provider = selection?.provider?.trim().toLowerCase();
+  const providerMatches =
+    provider && provider !== "auto" ? accounts.filter((account) => account.provider === provider) : accounts;
+  const candidates = providerMatches.length > 0 ? providerMatches : accounts;
+
+  const value = selection?.account?.trim().toLowerCase();
+  if (!value) return candidates[0] ?? null;
+
   return (
-    accounts.find((account) => account.id.toLowerCase() === value) ??
-    accounts.find((account) => account.email?.toLowerCase() === value) ??
-    accounts.find((account) => account.label?.toLowerCase() === value) ??
-    accounts[0] ??
+    candidates.find((account) => account.id.toLowerCase() === value) ??
+    candidates.find((account) => account.email?.toLowerCase() === value) ??
+    candidates.find((account) => account.label?.toLowerCase() === value) ??
+    candidates.find((account) => account.configuredLabel?.toLowerCase() === value) ??
+    candidates.find((account) =>
+      [account.email, account.label, account.configuredLabel].some((text) => text?.toLowerCase().includes(value)),
+    ) ??
+    candidates[0] ??
     null
   );
 }

@@ -17,7 +17,9 @@ type Branding = {
 
 /**
  * `claude.svg` is the official mark from Simple Icons (CC0); `chatgpt.svg` and
- * `antigravity.svg` are from LobeHub Icons (MIT).
+ * `antigravity.svg` are from LobeHub Icons (MIT). `antigravity.png` is
+ * rasterised from `antigravity.svg` because macOS's menu bar SVG renderer drops
+ * its layered radial gradients.
  */
 const BRANDING: Record<ProviderId, Branding> = {
   codex: {
@@ -33,7 +35,7 @@ const BRANDING: Record<ProviderId, Branding> = {
   },
   antigravity: {
     name: "Antigravity",
-    icon: "antigravity.svg",
+    icon: "antigravity.png",
     skeletonWindows: ["Gemini 5h", "Gemini Weekly", "Claude/GPT 5h", "Claude/GPT Weekly"],
   },
 };

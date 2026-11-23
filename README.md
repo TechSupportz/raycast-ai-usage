@@ -8,7 +8,7 @@ For each account, one section listing its main rate-limit windows:
 
 - **ChatGPT** — the 5-hour and weekly limits, plus banked usage resets
 - **Claude Code** — the session and weekly limits, plus available saved usage resets. When either limit is depleted, enabled usage credits show monthly spending and its cap; spending details are only requested while a limit is depleted.
-- **Antigravity** — Gemini and Claude/GPT 5-hour and weekly limits when read from the Antigravity app or `agy` CLI, or session pools from the Antigravity IDE language server. Uncheck **Show Claude/GPT limits** in preferences to show only Gemini limits for Antigravity.
+- **Antigravity** — Gemini and Claude/GPT 5-hour and weekly limits when read from the Antigravity app or `agy` CLI, or session pools from the Antigravity IDE language server. Uncheck **Show Antigravity Claude/GPT limits** in preferences to show only Gemini limits for Antigravity.
 
 Every window shows how much you have left, coloured by how close you are to the limit. Its reset time appears when the provider reports a machine-readable timestamp.
 
@@ -18,9 +18,9 @@ Enable **Show usage used** in the extension preferences to show the percentage u
 
 Run **AI Usage in Menu Bar** once to pin it to the macOS menu bar. It shows one account's 5-hour (ChatGPT) or session (Claude Code) limit, falling back to the weekly limit when there is none. Open the menu to see every account's windows.
 
-Choose an account in Raycast Settings → Extensions → AI Usage → AI Usage in Menu Bar → **Menu Bar Account**. Enter its email or display name (for example, `Claude Code`). Leave it empty to show the first account in your order. If the account is unavailable, the first account is shown.
+Choose which provider's icon and percentage appear in the menu bar in Raycast Settings → Extensions → AI Usage → **Menu Bar** → **Provider** (or leave it on **First Account in Order**). If that provider has multiple accounts (such as multiple ChatGPT accounts), optionally enter an email or display name in **Account**. If the chosen provider or account is unavailable, it falls back to the first matching account.
 
-The menu bar refreshes every 5 minutes and shares its cache with View AI Usage. Turn on **Show time until reset** in the command's preferences to add the reset countdown to the title, e.g. `58% · 2h 3m`.
+The menu bar refreshes every 5 minutes and shares its cache with View AI Usage. Turn on **Show time until reset** in the extension preferences to add the reset countdown to the title, e.g. `58% · 2h 3m`.
 
 ## Multiple ChatGPT accounts
 

@@ -23,11 +23,13 @@ import {
   getLatestFetchedAt,
   getRemaining,
   pickMenuBarAccount,
+  type MenuBarProviderPreference,
 } from "./menu-bar-display";
 import type { UsageWindow } from "./providers/types";
 
 type Preferences = {
-  menuBarAccount?: string;
+  menuBarProvider?: MenuBarProviderPreference;
+  menuBarAccountName?: string;
   showUsageUsed: boolean;
   showResetTime: boolean;
   showAntigravityClaudeGpt: boolean;
@@ -39,11 +41,16 @@ type Preferences = {
  * Shares `useAccounts`, and with it the cache, with the View AI Usage command.
  */
 export default function Command() {
-  const { menuBarAccount, showUsageUsed, showResetTime, showAntigravityClaudeGpt } = getPreferenceValues<Preferences>();
+  const { menuBarProvider, menuBarAccountName, showUsageUsed, showResetTime, showAntigravityClaudeGpt } =
+    getPreferenceValues<Preferences>();
   const { states, isLoading, refresh } = useAccounts();
   const featuredId = pickMenuBarAccount(
-    states.map((state) => ({ ...state.config, email: state.account?.email })),
-    menuBarAccount ?? null,
+    states.map((state) => ({
+      ...state.config,
+      configuredLabel: state.configuredLabel,
+      email: state.account?.email,
+    })),
+    { provider: menuBarProvider, account: menuBarAccountName },
   )?.id;
   const featured = states.find((state) => state.config.id === featuredId) ?? null;
 
@@ -87,7 +94,9 @@ function getTitle(
 
   const { config, account } = state;
   const branding = getBranding(config.provider);
-  const icon = { source: branding.icon, tintColor: branding.iconTint };
+  const icon: Image.ImageLike = branding.iconTint
+    ? { source: branding.icon, tintColor: branding.iconTint }
+    : { source: branding.icon };
 
   if (account === null) {
     return { icon, title: "…", tooltip: `${config.label}: checking…` };
