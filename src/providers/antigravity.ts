@@ -128,66 +128,37 @@ async function fetchAntigravityAccountOnce(): Promise<Account> {
     failure: null,
   };
 
-  let localAuthError: AntigravityAuthError | null = null;
-  let localError: Error | null = null;
+  // `agy -p /usage` is the only supported way to read limits. The local language
+  // server RPCs (`fetchFromLocalServers`) are undocumented and against Google's
+  // ToS, so they are kept for when Google supports usage reporting officially
+  // but are not called.
+  const agyBinary = resolveAgyBinary();
+  if (!agyBinary) {
+    return {
+      ...base,
+      failure: {
+        kind: "error",
+        message: "The `agy` CLI was not found. Install `agy` and sign in to see Antigravity limits.",
+      },
+    };
+  }
 
   try {
-    const local = await fetchFromLocalServers();
-    if (local) {
-      return {
-        ...base,
-        email: local.email,
-        plan: local.plan,
-        windows: local.windows,
-      };
-    }
+    const windows = await fetchViaAgyCli(agyBinary);
+    return { ...base, windows };
   } catch (error) {
     if (error instanceof AntigravityAuthError) {
-      localAuthError = error;
-    } else if (error instanceof Error) {
-      localError = error;
+      return { ...base, failure: { kind: "expired", message: error.message } };
     }
+    return {
+      ...base,
+      failure: { kind: "error", message: error instanceof Error ? error.message : String(error) },
+    };
   }
-
-  const agyBinary = resolveAgyBinary();
-  if (agyBinary) {
-    try {
-      const windows = await fetchViaAgyCli(agyBinary);
-      return { ...base, windows };
-    } catch (error) {
-      if (error instanceof AntigravityAuthError) {
-        return { ...base, failure: { kind: "expired", message: error.message } };
-      }
-
-      if (localAuthError) {
-        return { ...base, failure: { kind: "expired", message: localAuthError.message } };
-      }
-
-      return {
-        ...base,
-        failure: { kind: "error", message: error instanceof Error ? error.message : String(error) },
-      };
-    }
-  }
-
-  if (localAuthError) {
-    return { ...base, failure: { kind: "expired", message: localAuthError.message } };
-  }
-
-  if (localError) {
-    return { ...base, failure: { kind: "error", message: localError.message } };
-  }
-
-  return {
-    ...base,
-    failure: {
-      kind: "error",
-      message: "Antigravity is not running and the `agy` CLI was not found. Open Antigravity or install `agy`.",
-    },
-  };
 }
 
-async function fetchFromLocalServers(): Promise<LocalSnapshot | null> {
+/** Unused: undocumented local language server path, kept for future use. */
+export async function fetchFromLocalServers(): Promise<LocalSnapshot | null> {
   const deadline = Date.now() + LOCAL_PROBE_DEADLINE_MS;
   const candidates = await detectAntigravityProcesses();
   if (candidates.length === 0) {

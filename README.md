@@ -8,7 +8,7 @@ For each account, one section listing its main rate-limit windows:
 
 - **ChatGPT** — the 5-hour and weekly limits, plus banked usage resets
 - **Claude Code** — the session and weekly limits, plus available saved usage resets. When either limit is depleted, enabled usage credits show monthly spending and its cap; spending details are only requested while a limit is depleted.
-- **Antigravity** — Gemini and Claude/GPT 5-hour and weekly limits when read from the Antigravity app or `agy` CLI, or session pools from the Antigravity IDE language server. Uncheck **Show Antigravity Claude/GPT limits** in preferences to show only Gemini limits for Antigravity.
+- **Antigravity** — Gemini and Claude/GPT 5-hour and weekly limits from the `agy` CLI. Uncheck **Show Antigravity Claude/GPT limits** in preferences to show only Gemini limits for Antigravity.
 
 Every window shows how much you have left, coloured by how close you are to the limit. Its reset time appears when the provider reports a machine-readable timestamp.
 
@@ -47,7 +47,7 @@ Every managed account appears automatically in Raycast. Use **Rename Account** t
 - [Raycast](https://www.raycast.com/)
 - For ChatGPT limits: [codex-auth](https://github.com/loongphy/codex-auth) installed globally with at least one signed-in account
 - For Claude Code limits: [Claude Code](https://claude.com/claude-code) installed and signed in
-- For Antigravity limits: [Antigravity](https://antigravity.google/) open and signed in, or the `agy` CLI installed and signed in
+- For Antigravity limits: the `agy` CLI installed and signed in
 
 ## Credentials
 
@@ -55,7 +55,7 @@ ChatGPT credentials stay owned by `codex-auth`. The extension reads its account 
 
 Claude Code credentials are read from the macOS Keychain, falling back to `~/.claude/.credentials.json`.
 
-Antigravity usage is read from the running Antigravity app or IDE's local language server on loopback, falling back to `agy -p /usage --output-format json` when the desktop app is closed. The extension does not store or copy Google OAuth credentials.
+Antigravity usage is read with `agy -p /usage --output-format json`. The extension does not store or copy Google OAuth credentials.
 
 ## Usage
 
